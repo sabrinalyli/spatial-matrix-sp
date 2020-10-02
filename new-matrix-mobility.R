@@ -34,10 +34,13 @@ munis<-cbind(names,muni_codes) %>%
 #save id file to be used on martrix 
 id<-left_join(orig_names,munis[c("names","idarea","code_muni")],by="names")
 
+#export as a csv
+#then copy the id numbers manually in excel to mobility_mat.xlsx
 write.csv(id,"code_muni_names.csv")
-#copy the id numbers manually in excel to mobility_mat.xlsx
 
 #====reorganise matrix====
+
+#import mobility matrix - file on github
 mob<-readxl::read_excel("mobility_mat.xlsx")
 
 #convert to dataframe
@@ -60,8 +63,7 @@ mob_df2[ind, "trips"] <- 0
 #convert mob_df2 as a matrix 
 mob_mat<-matrix(sapply(mob_df2$trips, as.numeric),ncol = 645, byrow = TRUE) 
 
-
-#set threshold value
+#set trip threshold value
 thresh <- 150
 
 #convert to matrix 
