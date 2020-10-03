@@ -3,7 +3,7 @@ library(network)
 library(maps)
 library(sf)
 
-mob<-readxl::read_excel("mat_bin.xlsx")
+mob<-readxl::read_excel("mat_bin_125.xlsx")
 
 #convert to dataframe
 mat <- as.data.frame(mob)
@@ -38,12 +38,24 @@ gmsp_df$centroids <- st_transform(gmsp_df, 29101) %>%
   # since you want the centroids in a second geometry col:
   st_geometry()
 
+muni_sp$centroids <- st_transform(muni_sp, 29101) %>% 
+  st_centroid() %>% 
+  # this is the crs from d, which has no EPSG code:
+  st_transform(., '+proj=longlat +ellps=GRS80 +no_defs') %>%
+  # since you want the centroids in a second geometry col:
+  st_geometry()
+
 # plot to check the location of centroid points
 plot(st_geometry(gmsp_df))
 plot(st_set_geometry(gmsp_df, 'centroids')[, 0], add = T, col = 'red', pch = 19)
 
+plot(st_geometry(muni_sp))
+plot(st_set_geometry(muni_sp, 'centroids')[, 0], add = T, col = 'red', pch = 19)
+
 #now convert centroids to lat/long coordinates 
 gmsp_coord<-st_coordinates(gmsp_df$centroids) 
+
+sp_coord_cent<-st_coordinates(muni_sp$centroids) 
 
 #create  two df, one containing the lat/long of start location and another for the end location
 gmsp_coord_start<-cbind(gmsp_coord,gmsp_df[,c("code_muni")])  %>%
@@ -74,17 +86,44 @@ coord_gmsp<-left_join(coord_start,coord_end[,c("lon.end","lat.end","end","start"
   filter(trips==1) %>%
   glimpse()
 
+
+#sp
+sp_coord_merge<-cbind(sp_coord_cent,muni_sp[,c("code_muni")])  %>%
+  mutate(start=code_muni) %>%
+  mutate(start=as.character(start)) %>%
+  mutate(end=code_muni) %>%
+  mutate(end=as.character(end)) %>%
+  select(-code_muni) %>%
+  glimpse()
+
+#now merge these coordinate columns with the trip data
+sp_coord_start<- left_join(mob_df,sp_coord_merge[,c("X","Y","start")],by="start") %>%
+  mutate(lon.start=X,lat.start=Y) %>%
+  select(-geom,-X,-Y) %>%
+  glimpse()
+
+sp_coord_end<- left_join(mob_df,sp_coord_merge[,c("X","Y","end")],by="end") %>%
+  mutate(lon.end=X,lat.end=Y) %>%
+  select(-geom,-X,-Y) %>%
+  glimpse()
+
+#create final df containing start lat-long and end lat-long
+coord_sp<-left_join(sp_coord_start,sp_coord_end[,c("lon.end","lat.end","end","start")],
+                      by=c("start","end")) %>%
+  filter(trips==1) %>%
+  glimpse()
+
 #plot mobility network on map 
 network_plot_mob<- ggplot() +
-  geom_sf(data = gmsp_df, 
+  geom_sf(data =  gmsp_df, #muni_sp,
                show.legend = FALSE,alpha = 0.25,
                color = "grey") +
-  geom_segment(data = coord_gmsp, 
+  geom_segment(data = coord_gmsp, #coord_sp, 
                aes(x = lon.start, xend = lon.end,
                    y = lat.start, yend = lat.end),
                color="red", 
                size = 0.25,alpha = 0.5) +
-  geom_point(data = data.frame(gmsp_coord),
+  geom_point(data = data.frame(sp_coord_cent), #gmsp_coord
              aes(X, Y), color = "black",shape=1) +
   theme_bw() +
   theme(axis.line = element_line(),
@@ -99,7 +138,6 @@ network_plot_mob<- ggplot() +
        subtitle="Threshold = 150 trips")
 
 network_plot_mob
-
 
 #====now plot network based on nearest neighbour adjacency matrix====
 #first convert list (nb) into a matrix
@@ -146,18 +184,32 @@ coord_gmsp_nb<-left_join(coord_start_nb,coord_end_nb
                       by=c("start","end")) %>%
   glimpse()
 
+#sp
+coord_start_nb_sp<- left_join(muni_sp_nb,sp_coord_start[,c("lon.start","lat.start","start","end")],by=c("start","end")) %>%
+  glimpse()
+
+coord_end_nb_sp<- left_join(muni_sp_nb,sp_coord_end[,c("lon.end","lat.end","start","end")],by=c("start","end")) %>%
+  glimpse()
+
+#create final df containing start lat-long and end lat-long
+coord_sp_nb<-left_join(coord_start_nb_sp,coord_end_nb_sp
+                         [,c("lon.end","lat.end","end","start")],
+                         by=c("start","end")) %>%
+  glimpse()
+
+
 #plot
 #plot mobility network on map 
 network_plot_nb<- ggplot() +
-  geom_sf(data = gmsp_df, 
+  geom_sf(data = muni_sp, #gmsp_df
           show.legend = FALSE,alpha = 0.25,
           color = "grey") +
-  geom_segment(data = coord_gmsp_nb, 
+  geom_segment(data = coord_sp_nb, #coord_gmsp_nb
                aes(x = lon.start, xend = lon.end,
                    y = lat.start, yend = lat.end),
                color="red", 
                size = 0.25,alpha = 0.5) +
-  geom_point(data = data.frame(gmsp_coord),
+  geom_point(data = data.frame(sp_coord_cent), #gmsp_coord
              aes(X, Y), color = "black",shape=1) +
   theme_bw() +
   theme(axis.line = element_line(),
@@ -169,7 +221,7 @@ network_plot_nb<- ggplot() +
         axis.text = element_blank(),
   ) +
   labs(title = "Municipality network as defined in the adjacency matrix",
-       subtitle="Threshold = 150 trips")
+       subtitle="Nearest neighour")
 
 network_plot_nb
 
